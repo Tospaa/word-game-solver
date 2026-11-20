@@ -28,7 +28,8 @@ typedef struct {
 typedef struct {
   const char* str_repr;
   size_t position;
-  uint8_t is_satisfied;
+  uint8_t is_satisfied;  // only relevant for yellow state
+  uint8_t has_been_seen_as_yellow_or_green;  // only relevant for gray state
 } char_rule_t;
 
 static const char A[] = "A";
@@ -69,13 +70,14 @@ static const char DOWN[] = "Down";
 static const char RIGHT[] = "Right";
 static const char LEFT[] = "Left";
 static const char DEL[] = "Del";
+static const char BACKSPACE[] = "Backspace";
 static const char ENTER[] = "Enter";
 static const char EMPTY_SPACE[] = " ";
 static const char CURSOR_INDICATOR[] = "^";
 
 static int LAST_PRESSED_KEYS[PRESSED_KEYS_BUFFER_SIZE];
 static int LAST_READ_BYTES[PRESSED_KEYS_BUFFER_SIZE];
-static int GAME_CURSOR[] = { 0, 0 };
+static int GAME_CURSOR[] = { 0, 0 };  // word, char e.g. 2, 3 => 3rd word 4th char
 static char* GAME_BOARD[GAME_WORDS_COUNT][GAME_WORD_SIZE] = {
   { NULL, NULL, NULL, NULL, NULL },
   { NULL, NULL, NULL, NULL, NULL },
@@ -164,7 +166,7 @@ static input_member_t INPUT_MAP[] = {
   { .code_arr={ 27, 91, 67 }, .size=3, .str_repr=RIGHT },
   { .code_arr={ 27, 91, 68 }, .size=3, .str_repr=LEFT },
   { .code_arr={ 27, 91, 51, 126 }, .size=4, .str_repr=DEL },
-  { .code_arr={ 127 }, .size=1, .str_repr=DEL },
+  { .code_arr={ 127 }, .size=1, .str_repr=BACKSPACE },
   { .code_arr={ 10 }, .size=1, .str_repr=ENTER },
 };
 static char* (*WORDS)[GAME_WORD_SIZE] = NULL;
@@ -335,7 +337,7 @@ void run_analysis() {
   size_t green_count = 0;
   char_rule_t yellows[GAME_WORDS_COUNT * GAME_WORD_SIZE];
   size_t yellow_count = 0;
-  char* grays[GAME_WORDS_COUNT * GAME_WORD_SIZE];
+  char_rule_t grays[GAME_WORDS_COUNT * GAME_WORD_SIZE];
   size_t gray_count = 0;
   for (int i = 0; i < GAME_WORDS_COUNT; i++) {
     uint8_t word_valid = 1;
@@ -351,31 +353,27 @@ void run_analysis() {
     valid_words++;
     for (int j = 0; j < GAME_WORD_SIZE; j++) {
       if (GAME_STATE[i][j] == 'G') {
-        greens[green_count] = (char_rule_t){ .str_repr=GAME_BOARD[i][j], .position=j, .is_satisfied=0 };
+        greens[green_count] = (char_rule_t){ .str_repr=GAME_BOARD[i][j], .position=j, .is_satisfied=0, .has_been_seen_as_yellow_or_green=0 };
         green_count++;
         continue;
       }
 
       if (GAME_STATE[i][j] == 'Y') {
-        yellows[yellow_count] = (char_rule_t){ .str_repr=GAME_BOARD[i][j], .position=j, .is_satisfied=0 };
+        yellows[yellow_count] = (char_rule_t){ .str_repr=GAME_BOARD[i][j], .position=j, .is_satisfied=0, .has_been_seen_as_yellow_or_green=0 };
         yellow_count++;
         continue;
       }
 
-      uint8_t seen_as_yellow_before = 0;
-      if (j > 0) {
-        for (int k = j - 1; k >= 0; k--) {
-          if (GAME_STATE[i][k] == 'Y' && GAME_BOARD[i][k]==GAME_BOARD[i][j]) {
-            seen_as_yellow_before = 1;
-            break;
-          }
+      uint8_t seen_as_yellow_or_green = 0;
+      for (int k = 0; k < GAME_WORD_SIZE; k++) {
+        if (GAME_BOARD[i][k]==GAME_BOARD[i][j] && (GAME_STATE[i][k] == 'Y' || GAME_STATE[i][k] == 'G')) {
+          seen_as_yellow_or_green = 1;
+          break;
         }
       }
 
-      if (!seen_as_yellow_before) {
-        grays[gray_count] = GAME_BOARD[i][j];
-        gray_count++;
-      }
+      grays[gray_count] = (char_rule_t){ .str_repr=GAME_BOARD[i][j], .position=j, .is_satisfied=0, .has_been_seen_as_yellow_or_green=seen_as_yellow_or_green };
+      gray_count++;
     }
   }
 
@@ -390,7 +388,12 @@ void run_analysis() {
 
     for (size_t j = 0; j < GAME_WORD_SIZE; j++) {
       for (size_t g = 0; g < gray_count; g++) {
-        if (grays[g] == WORDS[i][j]) {
+        if (!grays[g].has_been_seen_as_yellow_or_green && grays[g].str_repr == WORDS[i][j]) {
+          valid_candidate = 0;
+          break;
+        }
+
+        if (grays[g].has_been_seen_as_yellow_or_green && grays[g].str_repr == WORDS[i][j] && grays[g].position == j) {
           valid_candidate = 0;
           break;
         }
@@ -421,7 +424,7 @@ void run_analysis() {
       }
     }
 
-    for (size_t y = 0; y < yellow_count; y++) {
+    for (size_t y = 0; valid_candidate && y < yellow_count; y++) {
       valid_candidate = valid_candidate && yellows[y].is_satisfied;
     }
 
@@ -503,6 +506,14 @@ void right() {
   }
 }
 
+void left() {
+  if (GAME_CURSOR[1] > 0) GAME_CURSOR[1]--;
+  else {
+    if (GAME_CURSOR[0] <= 0) return;
+    GAME_CURSOR[0]--; GAME_CURSOR[1] = GAME_WORD_SIZE - 1;
+  }
+}
+
 void handle_input(input_result_t* input) {
   // printf("%s\n", input->pressed_key);
   if (input->pressed_key == SPACE) {
@@ -526,15 +537,18 @@ void handle_input(input_result_t* input) {
   }
 
   if (input->pressed_key == LEFT) {
-    if (GAME_CURSOR[1] > 0) GAME_CURSOR[1]--;
+    left();
+    return;
+  }
+
+  if (input->pressed_key == BACKSPACE) {
+    left();
+    GAME_BOARD[GAME_CURSOR[0]][GAME_CURSOR[1]] = NULL;
     return;
   }
 
   if (input->pressed_key == DEL) {
-    if (GAME_BOARD[GAME_CURSOR[0]][GAME_CURSOR[1]]) {
-      GAME_BOARD[GAME_CURSOR[0]][GAME_CURSOR[1]] = NULL;
-    }
-
+    GAME_BOARD[GAME_CURSOR[0]][GAME_CURSOR[1]] = NULL;
     return;
   }
 
