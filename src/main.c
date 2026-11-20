@@ -78,22 +78,8 @@ static const char CURSOR_INDICATOR[] = "^";
 static int LAST_PRESSED_KEYS[PRESSED_KEYS_BUFFER_SIZE];
 static int LAST_READ_BYTES[PRESSED_KEYS_BUFFER_SIZE];
 static int GAME_CURSOR[] = { 0, 0 };  // word, char e.g. 2, 3 => 3rd word 4th char
-static char* GAME_BOARD[GAME_WORDS_COUNT][GAME_WORD_SIZE] = {
-  { NULL, NULL, NULL, NULL, NULL },
-  { NULL, NULL, NULL, NULL, NULL },
-  { NULL, NULL, NULL, NULL, NULL },
-  { NULL, NULL, NULL, NULL, NULL },
-  { NULL, NULL, NULL, NULL, NULL },
-  { NULL, NULL, NULL, NULL, NULL },
-};
-static char GAME_STATE[GAME_WORDS_COUNT][GAME_WORD_SIZE] = {
-  { 'N', 'N', 'N', 'N', 'N' },
-  { 'N', 'N', 'N', 'N', 'N' },
-  { 'N', 'N', 'N', 'N', 'N' },
-  { 'N', 'N', 'N', 'N', 'N' },
-  { 'N', 'N', 'N', 'N', 'N' },
-  { 'N', 'N', 'N', 'N', 'N' },
-};
+static char* GAME_BOARD[GAME_WORDS_COUNT][GAME_WORD_SIZE];  // since this is static, all elements will be initialized to NULL by default
+static char GAME_STATE[GAME_WORDS_COUNT][GAME_WORD_SIZE];  // since this is static, all elements will be initialized to '\0' by default
 static input_member_t INPUT_MAP[] = {
   { .code_arr={ 97 }, .size=1, .str_repr=A },
   { .code_arr={ 65 }, .size=1, .str_repr=A },
@@ -440,9 +426,9 @@ void run_analysis() {
 }
 
 void cycle_state() {
-  if (GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] == 'N') { GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] = 'Y'; return; }
+  if (GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] ==  0 ) { GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] = 'Y'; return; }
   if (GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] == 'Y') { GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] = 'G'; return; }
-  if (GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] == 'G') { GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] = 'N'; return; }
+  if (GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] == 'G') { GAME_STATE[GAME_CURSOR[0]][GAME_CURSOR[1]] =  0 ; return; }
 }
 
 void draw_board() {
